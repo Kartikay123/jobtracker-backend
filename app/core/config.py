@@ -5,6 +5,7 @@ All config comes from environment variables (loaded from .env in dev).
 Import `settings` from here; never read os.environ directly elsewhere.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,19 @@ class Settings(BaseSettings):
     # --- Database / Redis ---
     DATABASE_URL: str
     REDIS_URL: str
+
+    # Render (and Railway) inject plain `postgresql://` or `postgres://` URLs.
+    # SQLAlchemy's asyncpg dialect requires `postgresql+asyncpg://`.
+    # This validator rewrites the scheme automatically so the app works on both
+    # local Docker (where .env already has +asyncpg) and cloud providers.
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _fix_db_scheme(cls, v: str) -> str:
+        if v.startswith("postgres://"):
+            v = "postgresql+asyncpg://" + v[len("postgres://"):]
+        elif v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
     # --- Auth ---
     JWT_SECRET: str
