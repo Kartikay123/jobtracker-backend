@@ -19,8 +19,8 @@ async def get_profile(current_user: CurrentUser) -> dict:
         "id": current_user.id,
         "name": current_user.name,
         "email": current_user.email,
-        "has_resume": bool(current_user.resume_text),
-        "resume_filename": current_user.resume_filename,
+        "has_resume": bool(getattr(current_user, "resume_text", None)),
+        "resume_filename": getattr(current_user, "resume_filename", None),
     }
 
 

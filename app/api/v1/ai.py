@@ -1,8 +1,8 @@
 """AI endpoints — rate-limited, persist results, return UI-friendly shapes."""
 
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import Depends, File, Form, UploadFile
+from fastapi import Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser
@@ -35,15 +35,15 @@ async def resume_match(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     job_description: Annotated[str, Form(alias="jobDescription")],
-    resume: Annotated[UploadFile | None, File(description="Resume PDF")] = None,
+    resume: Optional[UploadFile] = File(None, description="Resume PDF"),
 ) -> dict:
     # Use uploaded file, or fall back to the user's saved resume
+    saved_resume = getattr(current_user, "resume_text", None)
     if resume and resume.filename:
         resume_text = await extract_resume_text(resume)
-    elif current_user.resume_text:
-        resume_text = current_user.resume_text
+    elif saved_resume:
+        resume_text = saved_resume
     else:
-        from fastapi import HTTPException
         raise HTTPException(status_code=422, detail="Please upload a resume or save one to your profile first.")
 
     result = await ai_client.match_resume(resume_text, job_description)
@@ -130,14 +130,14 @@ async def generate_cover_letter(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
     job_description: Annotated[str, Form(alias="jobDescription")],
-    resume: Annotated[UploadFile | None, File(description="Resume PDF")] = None,
+    resume: Optional[UploadFile] = File(None, description="Resume PDF"),
 ) -> dict:
+    saved_resume = getattr(current_user, "resume_text", None)
     if resume and resume.filename:
         resume_text = await extract_resume_text(resume)
-    elif current_user.resume_text:
-        resume_text = current_user.resume_text
+    elif saved_resume:
+        resume_text = saved_resume
     else:
-        from fastapi import HTTPException
         raise HTTPException(status_code=422, detail="Please upload a resume or save one to your profile first.")
 
     cover_letter = await ai_client.generate_cover_letter(
