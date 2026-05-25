@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field, HttpUrl
+from pydantic import Field, HttpUrl, field_validator
 
 from app.schemas._base import CamelModel
 
@@ -18,6 +18,15 @@ class JobBase(CamelModel):
     salary: str | None = Field(default=None, max_length=100)
     link: HttpUrl | None = None
     notes: str | None = None
+
+    # Frontend may send an empty string when the user leaves the link blank.
+    # Convert "" → None so the HttpUrl validator doesn't reject it.
+    @field_validator("link", mode="before")
+    @classmethod
+    def _empty_link_to_none(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
 
 class JobCreate(JobBase):
@@ -36,6 +45,13 @@ class JobUpdate(CamelModel):
     link: HttpUrl | None = None
     notes: str | None = None
     applied_at: datetime | None = None
+
+    @field_validator("link", mode="before")
+    @classmethod
+    def _empty_link_to_none(cls, v: object) -> object:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
 
 class JobStatusUpdate(CamelModel):
