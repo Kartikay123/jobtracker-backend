@@ -1,0 +1,44 @@
+# --- Env / secrets ---
+.env
+.env.local
+.env.*.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# --- AI tooling ---
+.claude/
+.cursor/
+.aider*
+
+# --- Docker ---
+postgres_data/
+redis_data/
+
+# --- Alembic ---
+# Keep alembic/versions/*.py — those are migration files

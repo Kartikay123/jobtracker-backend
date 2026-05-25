@@ -1,0 +1,78 @@
+services:
+  api:
+    build:
+      context: .
+      target: dev          # uvicorn --reload; prod target is built by Render/Railway
+    container_name: jt_api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Bind-mount local code into the container so --reload picks up edits.
+      # Override __pycache__ with an anonymous volume to avoid permission noise.
+      - ./:/app
+      - /app/__pycache__
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: dev
+    container_name: jt_worker
+    command: arq app.workers.worker.WorkerSettings
+    env_file:
+      - .env
+    volumes:
+      # Same code mount as api → editing tasks.py hot-reloads via the
+      # worker's --watch flag (off by default; restart the container to
+      # pick up changes, or run with `arq --watch`).
+      - ./:/app
+      - /app/__pycache__
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: jt_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Host 5433 → container 5432 (host's 5432 is taken by another Postgres).
+      # The api container still talks to "db:5432" on the internal network.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: jt_redis
+    ports:
+      - "6379:6379"
+    # No volume — Redis data is ephemeral (cache + rate limit + queue).
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

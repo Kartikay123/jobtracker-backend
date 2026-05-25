@@ -1,0 +1,26 @@
+# Don't ship local junk into the image
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Secrets and IDE
+.env
+.env.*
+.vscode/
+.idea/
+.DS_Store
+
+# Git + docs we don't need at runtime
+.git/
+.gitignore
+README.md
+
+# Local data dirs (if anyone created them)
+postgres_data/
+redis_data/

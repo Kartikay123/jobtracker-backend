@@ -1,0 +1,12 @@
+Alembic migrations for JobTracker.
+
+Common commands (run inside the api container):
+
+  docker compose exec api alembic current
+  docker compose exec api alembic history
+  docker compose exec api alembic revision --autogenerate -m "add users"
+  docker compose exec api alembic upgrade head
+  docker compose exec api alembic downgrade -1
+
+env.py is configured for async (asyncpg). Add new model module imports to
+env.py so autogenerate sees them.
