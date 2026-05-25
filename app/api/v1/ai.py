@@ -1,8 +1,4 @@
-"""AI endpoints — rate-limited, persist results, return UI-friendly shapes.
-
-The actual AI calls are stubbed in app/services/ai_client.py — see the TODO
-there for swapping in a real provider.
-"""
+"""AI endpoints — rate-limited, persist results, return UI-friendly shapes."""
 
 from typing import Annotated
 
@@ -38,14 +34,20 @@ router = CamelAPIRouter(prefix="/ai", tags=["ai"])
 async def resume_match(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-    resume: Annotated[UploadFile, File(description="Resume PDF")],
     job_description: Annotated[str, Form(alias="jobDescription")],
+    resume: Annotated[UploadFile | None, File(description="Resume PDF")] = None,
 ) -> dict:
-    resume_text = await extract_resume_text(resume)
-    result = ai_client.match_resume(resume_text, job_description)
+    # Use uploaded file, or fall back to the user's saved resume
+    if resume and resume.filename:
+        resume_text = await extract_resume_text(resume)
+    elif current_user.resume_text:
+        resume_text = current_user.resume_text
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Please upload a resume or save one to your profile first.")
 
-    # Persist for history / future analytics. Not awaited on the response path
-    # for speed — but we do commit before returning so the row is durable.
+    result = await ai_client.match_resume(resume_text, job_description)
+
     record = ResumeMatch(
         user_id=current_user.id,
         resume_text=resume_text,
@@ -56,7 +58,6 @@ async def resume_match(
     )
     db.add(record)
     await db.commit()
-
     return result
 
 
@@ -73,21 +74,19 @@ async def generate_interview_questions(
     current_user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    raw_questions = ai_client.generate_questions(
+    raw_questions = await ai_client.generate_questions(
         role=payload.role,
         job_description=payload.job_description,
         count=payload.count,
     )
 
-    # Persist a session + its questions so the frontend has stable IDs to
-    # save answers against.
     sess = InterviewSession(
         user_id=current_user.id,
         title=payload.role,
         role=payload.role,
     )
     db.add(sess)
-    await db.flush()  # need sess.id before creating questions
+    await db.flush()
 
     questions = [
         InterviewQuestion(
@@ -104,10 +103,6 @@ async def generate_interview_questions(
     for q in questions:
         await db.refresh(q)
 
-    # Build the response objects manually rather than `model_validate(q)` —
-    # the latter would try to lazy-load `q.answer` (None here, but the
-    # async session can't do lazy loads). We *know* answer is None for
-    # freshly created questions, so set it explicitly.
     return {
         "session_id": sess.id,
         "questions": [
@@ -122,3 +117,32 @@ async def generate_interview_questions(
             for q in questions
         ],
     }
+
+
+@router.post(
+    "/cover-letter",
+    summary="Generate a cover letter from resume + job description",
+    dependencies=[
+        Depends(rate_limit(scope="cover_letter", max_requests=10, window_seconds=3600))
+    ],
+)
+async def generate_cover_letter(
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    job_description: Annotated[str, Form(alias="jobDescription")],
+    resume: Annotated[UploadFile | None, File(description="Resume PDF")] = None,
+) -> dict:
+    if resume and resume.filename:
+        resume_text = await extract_resume_text(resume)
+    elif current_user.resume_text:
+        resume_text = current_user.resume_text
+    else:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Please upload a resume or save one to your profile first.")
+
+    cover_letter = await ai_client.generate_cover_letter(
+        resume_text=resume_text,
+        job_description=job_description,
+        user_name=current_user.name,
+    )
+    return {"coverLetter": cover_letter}

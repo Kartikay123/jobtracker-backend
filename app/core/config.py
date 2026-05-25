@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
+    # --- AI ---
+    OPENAI_API_KEY: str | None = None
+
     @property
     def is_dev(self) -> bool:
         return self.ENVIRONMENT == "development"
