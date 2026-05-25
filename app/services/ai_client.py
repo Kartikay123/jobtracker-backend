@@ -91,16 +91,31 @@ def match_resume(resume_text: str, job_description: str) -> dict:
 
 # ---------- Interview question generation ----------
 _QUESTION_TEMPLATES = [
-    ("Walk me through a project where you used {role}.", "behavioral", "easy"),
+    # Behavioral — easy
+    ("Walk me through a project where you used {role} skills.", "behavioral", "easy"),
+    ("What would your first 90 days as a {role} look like?", "behavioral", "easy"),
+    ("How do you prioritize tasks when everything feels urgent?", "behavioral", "easy"),
+    ("Where do you see your career as a {role} going in the next 3 years?", "behavioral", "easy"),
+    ("What drew you to the {role} field and what keeps you motivated?", "behavioral", "easy"),
+    # Behavioral — medium
     ("How would you debug a production incident as a {role}?", "behavioral", "medium"),
     ("Describe a tradeoff you made between speed and quality.", "behavioral", "medium"),
-    ("What would your first 90 days as {role} look like?", "behavioral", "easy"),
-    ("Design a small system relevant to a {role}'s typical work.", "system-design", "hard"),
-    ("Explain a technical concept you've had to learn quickly recently.", "technical", "medium"),
-    ("How do you prioritize when everything feels urgent?", "behavioral", "easy"),
-    ("Tell me about a time you disagreed with a teammate.", "behavioral", "medium"),
-    ("What's the most interesting bug you've fixed?", "technical", "medium"),
-    ("Where do you see your career going?", "behavioral", "easy"),
+    ("Tell me about a time you disagreed with a teammate and how you resolved it.", "behavioral", "medium"),
+    ("Describe a situation where you had to pick up an unfamiliar technology quickly.", "behavioral", "medium"),
+    ("How do you handle feedback or criticism on your work?", "behavioral", "medium"),
+    ("Tell me about a time you failed and what you learned from it.", "behavioral", "medium"),
+    # Technical — medium / hard
+    ("What's the most interesting bug you've fixed and how did you track it down?", "technical", "medium"),
+    ("Explain a technical concept central to {role} work to a non-technical stakeholder.", "technical", "medium"),
+    ("How do you ensure code quality and maintainability in your projects?", "technical", "medium"),
+    ("Walk me through how you would approach performance optimization as a {role}.", "technical", "hard"),
+    # System design — hard
+    ("Design a small but realistic system relevant to a {role}'s typical work.", "system-design", "hard"),
+    ("How would you scale a service that suddenly gets 10× its normal traffic?", "system-design", "hard"),
+    ("What trade-offs would you consider when choosing between a monolith and microservices?", "system-design", "hard"),
+    # Situational
+    ("If you joined a team with significant technical debt, how would you approach it?", "behavioral", "medium"),
+    ("How do you stay current with new developments in the {role} space?", "behavioral", "easy"),
 ]
 
 

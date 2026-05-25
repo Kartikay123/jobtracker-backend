@@ -59,7 +59,7 @@ class InterviewGenerateRequest(CamelModel):
 
     role: str = Field(min_length=1, max_length=200)
     job_description: str | None = None
-    count: int = Field(default=5, ge=1, le=20)
+    count: int = Field(default=15, ge=1, le=30)
 
 
 class InterviewGenerateResponse(CamelModel):
