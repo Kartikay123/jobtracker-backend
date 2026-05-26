@@ -1,27 +1,44 @@
 """AI client — async. Uses OpenAI gpt-4o-mini when OPENAI_API_KEY is set,
 otherwise falls back to the keyword-matching stub so the app works without a key.
+
+If the OpenAI call fails for any reason (invalid key, no credits, network,
+JSON parse error), we log the error and fall back to the stub so the user
+gets a usable result instead of a 500.
 """
 import json
+import logging
 import re
 from collections import Counter
 
 from app.core.config import settings
 
+log = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
-# Lazy OpenAI client — only created when key is present
+# Lazy OpenAI client — only created when key is present.
+# Wrapped in try/except so a bad import / version mismatch never 500s the app.
 # ---------------------------------------------------------------------------
 _openai_client = None
+_openai_import_failed = False
+
 
 def _get_openai():
-    global _openai_client
-    if _openai_client is None and settings.OPENAI_API_KEY:
-        from openai import AsyncOpenAI
-        _openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    global _openai_client, _openai_import_failed
+    if _openai_import_failed or not settings.OPENAI_API_KEY:
+        return None
+    if _openai_client is None:
+        try:
+            from openai import AsyncOpenAI
+            _openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        except Exception as e:  # noqa: BLE001
+            log.warning("OpenAI client init failed (falling back to stub): %s", e)
+            _openai_import_failed = True
+            return None
     return _openai_client
 
 
 # ---------------------------------------------------------------------------
-# Stub helpers (used when no API key)
+# Stub helpers (used when no API key OR when OpenAI call fails)
 # ---------------------------------------------------------------------------
 _STOPWORDS = frozenset(
     """a an and or the of to in on with for at as by is are be been we you your
@@ -60,28 +77,10 @@ _QUESTION_TEMPLATES = [
 
 
 # ---------------------------------------------------------------------------
-# Public async API
+# Stub implementations (also used as fallbacks if OpenAI fails)
 # ---------------------------------------------------------------------------
 
-async def match_resume(resume_text: str, job_description: str) -> dict:
-    client = _get_openai()
-    if client:
-        rsp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": (
-                    "You are an expert resume reviewer. Given a resume and a job description, "
-                    "return a JSON object with exactly these keys: "
-                    "score (int 0-100), strengths (list of up to 5 strings), gaps (list of up to 5 strings). "
-                    "Be specific and actionable."
-                )},
-                {"role": "user", "content": f"RESUME:\n{resume_text}\n\nJOB DESCRIPTION:\n{job_description}"},
-            ],
-        )
-        return json.loads(rsp.choices[0].message.content)
-
-    # --- stub fallback ---
+def _stub_match_resume(resume_text: str, job_description: str) -> dict:
     resume_tokens = set(_tokens(resume_text))
     jd_counts = Counter(_tokens(job_description))
     if not jd_counts:
@@ -99,62 +98,21 @@ async def match_resume(resume_text: str, job_description: str) -> dict:
     }
 
 
-async def generate_questions(role: str, job_description: str | None, count: int) -> list[dict]:
-    client = _get_openai()
-    if client:
-        rsp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": (
-                    "You are an expert interviewer. Generate interview questions as a JSON object "
-                    "with key 'questions', each item having: text (string), category "
-                    "(one of: behavioral, technical, system-design), difficulty (one of: easy, medium, hard), "
-                    "position (0-indexed int)."
-                )},
-                {"role": "user", "content": (
-                    f"Generate exactly {count} interview questions for the role: {role}.\n"
-                    + (f"Job description context:\n{job_description}" if job_description else "")
-                )},
-            ],
-        )
-        data = json.loads(rsp.choices[0].message.content)
-        questions = data.get("questions", [])
-        for i, q in enumerate(questions):
-            q["position"] = i
-        return questions[:count]
-
-    # --- stub fallback ---
+def _stub_generate_questions(role: str, count: int) -> list[dict]:
     role = role.strip() or "engineer"
     out: list[dict] = []
     for i in range(count):
         template, category, difficulty = _QUESTION_TEMPLATES[i % len(_QUESTION_TEMPLATES)]
-        out.append({"text": template.format(role=role), "category": category, "difficulty": difficulty, "position": i})
+        out.append({
+            "text": template.format(role=role),
+            "category": category,
+            "difficulty": difficulty,
+            "position": i,
+        })
     return out
 
 
-async def generate_cover_letter(resume_text: str, job_description: str, user_name: str) -> str:
-    client = _get_openai()
-    if client:
-        rsp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": (
-                    "You are an expert career coach and professional writer. "
-                    "Write a compelling, personalized cover letter that is concise (3-4 paragraphs), "
-                    "professional, and highlights the candidate's most relevant experience. "
-                    "Do not use generic filler phrases. Return only the cover letter text, no subject line."
-                )},
-                {"role": "user", "content": (
-                    f"Candidate name: {user_name}\n\n"
-                    f"RESUME:\n{resume_text}\n\n"
-                    f"JOB DESCRIPTION:\n{job_description}"
-                )},
-            ],
-        )
-        return rsp.choices[0].message.content.strip()
-
-    # --- stub fallback ---
+def _stub_cover_letter(user_name: str) -> str:
     return (
         f"Dear Hiring Manager,\n\n"
         f"I am writing to express my strong interest in the position described. "
@@ -164,3 +122,91 @@ async def generate_cover_letter(resume_text: str, job_description: str, user_nam
         f"Thank you for considering my application. I look forward to discussing how I can contribute.\n\n"
         f"Sincerely,\n{user_name}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Public async API (OpenAI with stub fallback on any failure)
+# ---------------------------------------------------------------------------
+
+async def match_resume(resume_text: str, job_description: str) -> dict:
+    client = _get_openai()
+    if client:
+        try:
+            rsp = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": (
+                        "You are an expert resume reviewer. Given a resume and a job description, "
+                        "return a JSON object with exactly these keys: "
+                        "score (int 0-100), strengths (list of up to 5 strings), gaps (list of up to 5 strings). "
+                        "Be specific and actionable."
+                    )},
+                    {"role": "user", "content": f"RESUME:\n{resume_text}\n\nJOB DESCRIPTION:\n{job_description}"},
+                ],
+            )
+            return json.loads(rsp.choices[0].message.content)
+        except Exception as e:  # noqa: BLE001
+            log.warning("OpenAI match_resume failed, using stub: %s", e)
+    return _stub_match_resume(resume_text, job_description)
+
+
+async def generate_questions(role: str, job_description: str | None, count: int) -> list[dict]:
+    client = _get_openai()
+    if client:
+        try:
+            rsp = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": (
+                        "You are an expert interviewer. Generate interview questions as a JSON object "
+                        "with key 'questions', each item having: text (string), category "
+                        "(one of: behavioral, technical, system-design), difficulty (one of: easy, medium, hard), "
+                        "position (0-indexed int)."
+                    )},
+                    {"role": "user", "content": (
+                        f"Generate exactly {count} interview questions for the role: {role}.\n"
+                        + (f"Job description context:\n{job_description}" if job_description else "")
+                    )},
+                ],
+            )
+            data = json.loads(rsp.choices[0].message.content)
+            questions = data.get("questions", [])
+            # Normalize position field
+            for i, q in enumerate(questions):
+                q["position"] = i
+                q.setdefault("category", "behavioral")
+                q.setdefault("difficulty", "medium")
+            if questions:
+                return questions[:count]
+            log.warning("OpenAI returned no questions, using stub")
+        except Exception as e:  # noqa: BLE001
+            log.warning("OpenAI generate_questions failed, using stub: %s", e)
+    return _stub_generate_questions(role, count)
+
+
+async def generate_cover_letter(resume_text: str, job_description: str, user_name: str) -> str:
+    client = _get_openai()
+    if client:
+        try:
+            rsp = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": (
+                        "You are an expert career coach and professional writer. "
+                        "Write a compelling, personalized cover letter that is concise (3-4 paragraphs), "
+                        "professional, and highlights the candidate's most relevant experience. "
+                        "Do not use generic filler phrases. Return only the cover letter text, no subject line."
+                    )},
+                    {"role": "user", "content": (
+                        f"Candidate name: {user_name}\n\n"
+                        f"RESUME:\n{resume_text}\n\n"
+                        f"JOB DESCRIPTION:\n{job_description}"
+                    )},
+                ],
+            )
+            return rsp.choices[0].message.content.strip()
+        except Exception as e:  # noqa: BLE001
+            log.warning("OpenAI generate_cover_letter failed, using stub: %s", e)
+    return _stub_cover_letter(user_name)
