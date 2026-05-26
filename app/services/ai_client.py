@@ -192,17 +192,48 @@ async def generate_cover_letter(resume_text: str, job_description: str, user_nam
         try:
             rsp = await client.chat.completions.create(
                 model="gpt-4o-mini",
+                temperature=0.4,  # lower = more grounded in resume facts
                 messages=[
                     {"role": "system", "content": (
-                        "You are an expert career coach and professional writer. "
-                        "Write a compelling, personalized cover letter that is concise (3-4 paragraphs), "
-                        "professional, and highlights the candidate's most relevant experience. "
-                        "Do not use generic filler phrases. Return only the cover letter text, no subject line."
+                        "You are an expert career writer. Write a highly tailored, evidence-based "
+                        "cover letter that proves the candidate is a strong match for THIS specific job.\n\n"
+                        "STRICT RULES — follow exactly:\n"
+                        "1. Read the JOB DESCRIPTION carefully. Identify the top 3-5 specific "
+                        "requirements (skills, tools, responsibilities, years of experience).\n"
+                        "2. Read the RESUME carefully. Pull out concrete work experiences, project "
+                        "names, technologies, metrics, and achievements that DIRECTLY map to those "
+                        "requirements.\n"
+                        "3. For every claim you make, reference a specific item from the resume — "
+                        "a project name, a company, a measurable result (numbers, %, scale, impact). "
+                        "Never invent details that are not in the resume.\n"
+                        "4. Match the language to the job description. If the JD says 'RAG pipeline', "
+                        "'vector search', 'OAuth2', 'CI/CD' — use those exact phrases when you have "
+                        "supporting evidence in the resume.\n"
+                        "5. Avoid all generic filler: NO 'I am writing to express my interest', "
+                        "NO 'I am a hard worker', NO 'team player', NO 'passionate about'. Replace "
+                        "those with specific evidence.\n\n"
+                        "STRUCTURE (4 short paragraphs, ~300 words total):\n"
+                        "• Paragraph 1 — Hook (2-3 sentences): name the role and the company if "
+                        "given, then state the single strongest reason you fit, backed by one "
+                        "specific resume highlight.\n"
+                        "• Paragraph 2 — Direct skill match: pick 2-3 requirements from the JD "
+                        "and pair each with a specific project / experience / metric from the resume.\n"
+                        "• Paragraph 3 — Broader value: mention 1-2 additional differentiators "
+                        "from the resume (achievement, leadership, unique tech stack) that go "
+                        "beyond the must-haves.\n"
+                        "• Paragraph 4 — Close (1-2 sentences): brief, confident, action-oriented. "
+                        "Avoid 'thank you for considering'.\n\n"
+                        "Tone: confident, concrete, professional, never desperate. "
+                        "Sign off with the candidate's name. Return ONLY the cover letter text — "
+                        "no subject line, no markdown, no preamble."
                     )},
                     {"role": "user", "content": (
                         f"Candidate name: {user_name}\n\n"
-                        f"RESUME:\n{resume_text}\n\n"
-                        f"JOB DESCRIPTION:\n{job_description}"
+                        f"=== RESUME ===\n{resume_text}\n\n"
+                        f"=== JOB DESCRIPTION ===\n{job_description}\n\n"
+                        f"Now write the cover letter following the rules above. "
+                        f"Prioritise concrete evidence from the resume that directly answers "
+                        f"the job description's requirements."
                     )},
                 ],
             )
