@@ -5,6 +5,8 @@ All config comes from environment variables (loaded from .env in dev).
 Import `settings` from here; never read os.environ directly elsewhere.
 """
 
+from urllib.parse import parse_qsl, urlencode
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -23,10 +25,15 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     REDIS_URL: str
 
-    # Render (and Railway) inject plain `postgresql://` or `postgres://` URLs.
+    # Render/Railway/Neon hand out plain `postgresql://` or `postgres://` URLs.
     # SQLAlchemy's asyncpg dialect requires `postgresql+asyncpg://`.
     # This validator rewrites the scheme automatically so the app works on both
     # local Docker (where .env already has +asyncpg) and cloud providers.
+    #
+    # Neon (and Supabase) URLs also carry libpq-only query params that asyncpg
+    # rejects at connect time:
+    #   * sslmode=require        → asyncpg spells it `ssl=require`
+    #   * channel_binding=require → not supported by asyncpg; must be dropped
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def _fix_db_scheme(cls, v: str) -> str:
@@ -34,6 +41,17 @@ class Settings(BaseSettings):
             v = "postgresql+asyncpg://" + v[len("postgres://"):]
         elif v.startswith("postgresql://"):
             v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        if "?" in v:
+            base, _, query = v.partition("?")
+            params = []
+            for key, val in parse_qsl(query):
+                if key == "sslmode":
+                    params.append(("ssl", val))
+                elif key == "channel_binding":
+                    continue
+                else:
+                    params.append((key, val))
+            v = base + (f"?{urlencode(params)}" if params else "")
         return v
 
     # --- Auth ---
