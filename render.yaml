@@ -53,7 +53,7 @@ services:
       - key: JWT_EXPIRE_MINUTES
         value: "60"
       - key: CORS_ORIGINS
-        value: https://your-frontend.vercel.app   # CHANGE ME after frontend deploy
+        value: https://jobtracker-frontend-theta.vercel.app
       # On free (0.5 CPU, 512MB), one worker leaves headroom for spikes.
       - key: WEB_CONCURRENCY
         value: "1"
